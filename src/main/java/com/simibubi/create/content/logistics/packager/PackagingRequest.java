@@ -33,36 +33,4 @@ public record PackagingRequest(ItemStack item, MutableInt count, String address,
 		return getCount() == 0;
 	}
 
-	public static PackagingRequest fromNBT(CompoundTag tag) {
-		ItemStack item = ItemStack.of(tag.getCompound("Item"));
-		int count = tag.getInt("Count");
-		String address = tag.getString("Address");
-		int linkIndex = tag.getInt("LinkIndex");
-		MutableBoolean finalLink = new MutableBoolean(tag.getBoolean("FinalLink"));
-		int packageCount = tag.getInt("PackageCount");
-		int orderId = tag.getInt("OrderId");
-		PackageOrder context = tag.contains("OrderContext") ? PackageOrder.read(tag.getCompound("OrderContext")) : null;
-		PackageOrderCraftingContext orderContext =
-			tag.contains("OrderCraftingContext") ? PackageOrderCraftingContext.read(tag.getCompound("OrderCraftingContext")) : null;
-		return create(item, count, address, linkIndex, finalLink, packageCount, orderId, context, orderContext);
-	}
-
-	public CompoundTag toNBT() {
-		CompoundTag tag = new CompoundTag();
-		tag.putInt("Count", count.intValue());
-		tag.put("Item", item.serializeNBT());
-		tag.putString("Address", address);
-		tag.putInt("LinkIndex", linkIndex);
-		tag.putBoolean("FinalLink", finalLink.booleanValue());
-		tag.putInt("PackageCount", packageCounter.intValue());
-		tag.putInt("OrderId", orderId);
-		if (context != null) {
-			tag.put("OrderContext", context.write());
-		}
-		if (craftingContext != null) {
-			tag.put("OrderCraftingContext", craftingContext.write());
-		}
-		return tag;
-	}
-
 }

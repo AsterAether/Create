@@ -2,15 +2,21 @@ package com.simibubi.create.content.logistics.box;
 
 import java.lang.ref.WeakReference;
 import java.util.List;
+import java.util.Optional;
 
 import javax.annotation.Nullable;
 
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.simibubi.create.AllDataComponents;
 import com.simibubi.create.AllEntityTypes;
 import com.simibubi.create.AllSoundEvents;
 import com.simibubi.create.Create;
 import com.simibubi.create.content.logistics.box.PackageStyles.PackageStyle;
 import com.simibubi.create.content.logistics.stockTicker.PackageOrder;
+import com.simibubi.create.foundation.item.ItemHelper;
 
+import net.createmod.catnip.codecs.stream.CatnipStreamCodecBuilders;
 import com.simibubi.create.content.logistics.stockTicker.PackageOrderCraftingContext;
 
 import net.createmod.catnip.data.Glob;
@@ -20,9 +26,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ItemParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -39,13 +46,14 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.UseAnim;
+import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-import net.minecraftforge.items.ItemHandlerHelper;
-import net.minecraftforge.items.ItemStackHandler;
+import net.neoforged.neoforge.items.ItemHandlerHelper;
+import net.neoforged.neoforge.items.ItemStackHandler;
 
 public class PackageItem extends Item {
 
@@ -92,81 +100,61 @@ public class PackageItem extends Item {
 
 	public static ItemStack containing(ItemStackHandler stacks) {
 		ItemStack box = PackageStyles.getRandomBox();
-		CompoundTag compound = new CompoundTag();
-		compound.put("Items", stacks.serializeNBT());
-		box.setTag(compound);
+		box.set(AllDataComponents.PACKAGE_CONTENTS, ItemHelper.containerContentsFromHandler(stacks));
 		return box;
 	}
 
 	public static void clearAddress(ItemStack box) {
-		if (box.hasTag())
-			box.getTag()
-				.remove("Address");
+		box.remove(AllDataComponents.PACKAGE_ADDRESS);
 	}
 
 	public static void addAddress(ItemStack box, String address) {
-		box.getOrCreateTag()
-			.putString("Address", address);
+		box.set(AllDataComponents.PACKAGE_ADDRESS, address);
 	}
 
 	public static void setOrder(ItemStack box, int orderId, int linkIndex, boolean isFinalLink, int fragmentIndex,
 								boolean isFinal, @Nullable PackageOrder orderContext, @Nullable PackageOrderCraftingContext orderCraftingContext) {
-		CompoundTag tag = new CompoundTag();
-		tag.putInt("OrderId", orderId);
-		tag.putInt("LinkIndex", linkIndex);
-		tag.putBoolean("IsFinalLink", isFinalLink);
-		tag.putInt("Index", fragmentIndex);
-		tag.putBoolean("IsFinal", isFinal);
-		if (orderContext != null)
-			tag.put("OrderContext", orderContext.write());
-		if (orderCraftingContext != null)
-			tag.put("OrderCraftingContext", orderCraftingContext.write());
-		box.getOrCreateTag()
-			.put("Fragment", tag);
+		PackageOrderData order = new PackageOrderData(orderId, linkIndex, isFinalLink, fragmentIndex, isFinal, orderContext, orderCraftingContext);
+		box.set(AllDataComponents.PACKAGE_ORDER_DATA, order);
 	}
 
 	public static int getOrderId(ItemStack box) {
-		CompoundTag tag = box.getTag();
-		if (tag == null || !tag.contains("Fragment"))
+		if (box.has(AllDataComponents.PACKAGE_ORDER_DATA)) {
+			//noinspection DataFlowIssue
+			return box.get(AllDataComponents.PACKAGE_ORDER_DATA).orderId();
+		} else {
 			return -1;
-		return tag.getCompound("Fragment")
-			.getInt("OrderId");
+		}
 	}
 
 	public static PackageOrder getOrderContext(ItemStack box) {
-		CompoundTag tag = box.getTag();
-		if (tag == null || !tag.contains("Fragment"))
+		if (box.has(AllDataComponents.PACKAGE_ORDER_DATA)) {
+			PackageOrderData data = box.get(AllDataComponents.PACKAGE_ORDER_DATA);
+			return data.orderContext();
+		} else if (box.has(AllDataComponents.PACKAGE_ORDER_CONTEXT)) {
+			return box.get(AllDataComponents.PACKAGE_ORDER_CONTEXT);
+		} else {
 			return null;
-		CompoundTag frag = tag.getCompound("Fragment");
-		if (!frag.contains("OrderContext"))
-			return null;
-		return PackageOrder.read(frag.getCompound("OrderContext"));
+		}
 	}
 
 	public static PackageOrderCraftingContext getOrderCraftingContext(ItemStack box) {
-		CompoundTag tag = box.getTag();
-		if (tag == null || !tag.contains("Fragment"))
+		if (box.has(AllDataComponents.PACKAGE_ORDER_DATA)) {
+			PackageOrderData data = box.get(AllDataComponents.PACKAGE_ORDER_DATA);
+			return data.craftingContext();
+		} else if (box.has(AllDataComponents.PACKAGE_ORDER_CRAFTING_CONTEXT)) {
+			return box.get(AllDataComponents.PACKAGE_ORDER_CRAFTING_CONTEXT);
+		} else {
 			return null;
-		CompoundTag frag = tag.getCompound("Fragment");
-		if (!frag.contains("OrderContext"))
-			return null;
-		return PackageOrderCraftingContext.read(frag.getCompound("OrderCraftingContext"));
+		}
 	}
 
 	public static void addOrderContext(ItemStack box, PackageOrder orderContext) {
-		CompoundTag tag = box.getOrCreateTagElement("Fragment");
-		if (orderContext != null)
-			tag.put("OrderContext", orderContext.write());
-		box.getOrCreateTag()
-			.put("Fragment", tag);
+		box.set(AllDataComponents.PACKAGE_ORDER_CONTEXT, orderContext);
 	}
 
 	public static void addOrderCraftingContext(ItemStack box, PackageOrderCraftingContext orderCraftingContext) {
-		CompoundTag tag = box.getOrCreateTagElement("Fragment");
-		if (orderCraftingContext != null)
-			tag.put("OrderCraftingContext", orderCraftingContext.write());
-		box.getOrCreateTag()
-			.put("Fragment", tag);
+		box.set(AllDataComponents.PACKAGE_ORDER_CRAFTING_CONTEXT, orderCraftingContext);
 	}
 
 	public static boolean matchAddress(ItemStack box, String address) {
@@ -184,10 +172,7 @@ public class PackageItem extends Item {
 	}
 
 	public static String getAddress(ItemStack box) {
-		String boxAddress = !box.hasTag() ? ""
-			: box.getTag()
-			.getString("Address");
-		return boxAddress;
+		return box.getOrDefault(AllDataComponents.PACKAGE_ADDRESS, "");
 	}
 
 	public static float getWidth(ItemStack box) {
@@ -210,23 +195,19 @@ public class PackageItem extends Item {
 
 	public static ItemStackHandler getContents(ItemStack box) {
 		ItemStackHandler newInv = new ItemStackHandler(9);
-		CompoundTag invNBT = box.getOrCreateTagElement("Items");
-		if (!invNBT.isEmpty())
-			newInv.deserializeNBT(invNBT);
+		ItemContainerContents contents = box.getOrDefault(AllDataComponents.PACKAGE_CONTENTS, ItemContainerContents.EMPTY);
+		ItemHelper.fillItemStackHandler(contents, newInv);
 		return newInv;
 	}
 
 	@Override
-	public void appendHoverText(ItemStack pStack, Level pLevel, List<Component> pTooltipComponents,
-								TooltipFlag pIsAdvanced) {
-		super.appendHoverText(pStack, pLevel, pTooltipComponents, pIsAdvanced);
-		CompoundTag compoundnbt = pStack.getOrCreateTag();
+	public void appendHoverText(ItemStack stack, TooltipContext tooltipContext, List<Component> tooltipComponents,
+								TooltipFlag tooltipFlag) {
+		super.appendHoverText(stack, tooltipContext, tooltipComponents, tooltipFlag);
 
-		if (compoundnbt.contains("Address", Tag.TAG_STRING) && !compoundnbt.getString("Address")
-			.isBlank()) {
-			pTooltipComponents.add(Component.literal("\u2192 " + compoundnbt.getString("Address"))
+		if (stack.has(AllDataComponents.PACKAGE_ADDRESS))
+			tooltipComponents.add(Component.literal("\u2192 " + stack.get(AllDataComponents.PACKAGE_ADDRESS))
 				.withStyle(ChatFormatting.GOLD));
-		}
 
 		/*
 		 * Debug Fragmentation Data if (compoundnbt.contains("Fragment")) { CompoundTag
@@ -241,12 +222,13 @@ public class PackageItem extends Item {
 		 * .withStyle(ChatFormatting.DARK_GREEN)); }
 		 */
 
-		if (!compoundnbt.contains("Items", Tag.TAG_COMPOUND))
+		// From stack nbt
+		if (!stack.has(AllDataComponents.PACKAGE_CONTENTS))
 			return;
 
 		int visibleNames = 0;
 		int skippedNames = 0;
-		ItemStackHandler contents = getContents(pStack);
+		ItemStackHandler contents = getContents(stack);
 		for (int i = 0; i < contents.getSlots(); i++) {
 			ItemStack itemstack = contents.getStackInSlot(i);
 			if (itemstack.isEmpty())
@@ -259,7 +241,7 @@ public class PackageItem extends Item {
 			}
 
 			visibleNames++;
-			pTooltipComponents.add(itemstack.getHoverName()
+			tooltipComponents.add(itemstack.getHoverName()
 				.copy()
 				.append(" x")
 				.append(String.valueOf(itemstack.getCount()))
@@ -267,14 +249,14 @@ public class PackageItem extends Item {
 		}
 
 		if (skippedNames > 0)
-			pTooltipComponents.add(Component.translatable("container.shulkerBox.more", skippedNames)
+			tooltipComponents.add(Component.translatable("container.shulkerBox.more", skippedNames)
 				.withStyle(ChatFormatting.ITALIC));
 	}
 
 	// Throwing stuff
 
 	@Override
-	public int getUseDuration(ItemStack p_77626_1_) {
+	public int getUseDuration(ItemStack stack, LivingEntity entity) {
 		return 72000;
 	}
 
@@ -297,7 +279,7 @@ public class PackageItem extends Item {
 					continue;
 
 				if (itemstack.getItem() instanceof SpawnEggItem sei && worldIn instanceof ServerLevel sl) {
-					EntityType<?> entitytype = sei.getType(itemstack.getTag());
+					EntityType<?> entitytype = sei.getType(itemstack);
 					Entity entity = entitytype.spawn(sl, itemstack, null, BlockPos.containing(playerIn.position()
 							.add(playerIn.getLookAngle()
 								.multiply(1, 0, 1)
@@ -378,7 +360,7 @@ public class PackageItem extends Item {
 	public void releaseUsing(ItemStack stack, Level world, LivingEntity entity, int ticks) {
 		if (!(entity instanceof Player player))
 			return;
-		int i = this.getUseDuration(stack) - ticks;
+		int i = this.getUseDuration(stack, entity) - ticks;
 		if (i < 0)
 			return;
 
@@ -414,6 +396,49 @@ public class PackageItem extends Item {
 		if (f > 1.0F)
 			f = 1.0F;
 		return f;
+	}
+
+	public record PackageOrderData(int orderId, int linkIndex, boolean isFinalLink, int fragmentIndex,
+								   boolean isFinal, @Nullable PackageOrder orderContext, @Nullable PackageOrderCraftingContext craftingContext) {
+		public PackageOrderData(int orderId, int linkIndex, boolean isFinalLink, int fragmentIndex,
+								boolean isFinal, Optional<PackageOrder> orderContext, Optional<PackageOrderCraftingContext> craftingContext) {
+			this(orderId, linkIndex, isFinalLink, fragmentIndex, isFinal, orderContext.orElse(null), craftingContext.orElse(null));
+		}
+
+		public static final Codec<PackageOrderData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+			Codec.INT.fieldOf("order_id").forGetter(PackageOrderData::orderId),
+			Codec.INT.fieldOf("link_index").forGetter(PackageOrderData::linkIndex),
+			Codec.BOOL.fieldOf("is_final_link").forGetter(PackageOrderData::isFinalLink),
+			Codec.INT.fieldOf("fragment_index").forGetter(PackageOrderData::fragmentIndex),
+			Codec.BOOL.fieldOf("is_final").forGetter(PackageOrderData::isFinal),
+			PackageOrder.CODEC.optionalFieldOf("order_context").forGetter(i -> Optional.ofNullable(i.orderContext)),
+			PackageOrderCraftingContext.CODEC.optionalFieldOf("order_crafting_context").forGetter(i -> Optional.ofNullable(i.craftingContext))
+		).apply(instance, PackageOrderData::new));
+
+		public static final StreamCodec<RegistryFriendlyByteBuf, PackageOrderData> STREAM_CODEC = new StreamCodec<RegistryFriendlyByteBuf, PackageOrderData>() {
+			@Override
+			public PackageOrderData decode(RegistryFriendlyByteBuf registryFriendlyByteBuf) {
+				Integer orderId = ByteBufCodecs.INT.decode(registryFriendlyByteBuf);
+				Integer linkIndex = ByteBufCodecs.INT.decode(registryFriendlyByteBuf);
+				Boolean finalLink = ByteBufCodecs.BOOL.decode(registryFriendlyByteBuf);
+				Integer fragmentIndex = ByteBufCodecs.INT.decode(registryFriendlyByteBuf);
+				Boolean finalFragment = ByteBufCodecs.BOOL.decode(registryFriendlyByteBuf);
+				PackageOrder orderContext = CatnipStreamCodecBuilders.nullable(PackageOrder.STREAM_CODEC).decode(registryFriendlyByteBuf);
+				PackageOrderCraftingContext orderCraftingContext = CatnipStreamCodecBuilders.nullable(PackageOrderCraftingContext.STREAM_CODEC).decode(registryFriendlyByteBuf);
+				return new PackageOrderData(orderId, linkIndex, finalLink, fragmentIndex, finalFragment, orderContext, orderCraftingContext);
+			}
+
+			@Override
+			public void encode(RegistryFriendlyByteBuf o, PackageOrderData packageOrderData) {
+				ByteBufCodecs.INT.encode(o, packageOrderData.orderId);
+				ByteBufCodecs.INT.encode(o, packageOrderData.linkIndex);
+				ByteBufCodecs.BOOL.encode(o, packageOrderData.isFinalLink);
+				ByteBufCodecs.INT.encode(o, packageOrderData.fragmentIndex);
+				ByteBufCodecs.BOOL.encode(o, packageOrderData.isFinal);
+				CatnipStreamCodecBuilders.nullable(PackageOrder.STREAM_CODEC).encode(o, packageOrderData.orderContext);
+				CatnipStreamCodecBuilders.nullable(PackageOrderCraftingContext.STREAM_CODEC).encode(o, packageOrderData.craftingContext);
+			}
+		};
 	}
 
 }

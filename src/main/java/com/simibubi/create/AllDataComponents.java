@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
 
+import com.simibubi.create.content.logistics.stockTicker.PackageOrderCraftingContext;
+
 import org.jetbrains.annotations.ApiStatus.Internal;
 
 import com.mojang.serialization.Codec;
@@ -328,6 +330,11 @@ public class AllDataComponents {
 	public static final DataComponentType<PackageOrder> PACKAGE_ORDER_CONTEXT = register(
 		"package_order_context",
 		builder -> builder.persistent(PackageOrder.CODEC).networkSynchronized(PackageOrder.STREAM_CODEC)
+	);
+
+	public static final DataComponentType<PackageOrderCraftingContext> PACKAGE_ORDER_CRAFTING_CONTEXT = register(
+		"package_order_crafting_context",
+		builder -> builder.persistent(PackageOrderCraftingContext.CODEC).networkSynchronized(PackageOrderCraftingContext.STREAM_CODEC)
 	);
 
 	public static final DataComponentType<ClickToLinkData> CLICK_TO_LINK_DATA = register(

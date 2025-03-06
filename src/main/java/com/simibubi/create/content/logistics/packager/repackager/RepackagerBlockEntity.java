@@ -2,6 +2,7 @@ package com.simibubi.create.content.logistics.packager.repackager;
 
 import java.util.List;
 
+import com.simibubi.create.AllBlockEntityTypes;
 import com.simibubi.create.content.logistics.box.PackageItem;
 import com.simibubi.create.content.logistics.crate.BottomlessItemHandler;
 import com.simibubi.create.content.logistics.packager.PackagerBlockEntity;
@@ -12,8 +13,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
-
-import net.minecraftforge.items.IItemHandler;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.ItemHandlerHelper;
 
 public class RepackagerBlockEntity extends PackagerBlockEntity {
 
@@ -57,8 +60,7 @@ public class RepackagerBlockEntity extends PackagerBlockEntity {
 
 	@Override
 	public void recheckIfLinksPresent() {
-	}
-
+}
 	@Override
 	public boolean redstoneModeActive() {
 		return true;
@@ -149,6 +151,14 @@ public class RepackagerBlockEntity extends PackagerBlockEntity {
 		animationTicks = CYCLE;
 		queuedExitingPackages.addAll(toPush.subList(1, toPush.size()));
 		notifyUpdate();
+	}
+
+	public static void registerCapabilities(RegisterCapabilitiesEvent event) {
+		event.registerBlockEntity(
+			Capabilities.ItemHandler.BLOCK,
+			AllBlockEntityTypes.REPACKAGER.get(),
+			(be, context) -> be.inventory
+		);
 	}
 
 }

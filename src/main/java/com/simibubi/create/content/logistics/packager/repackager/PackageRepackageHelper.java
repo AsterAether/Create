@@ -6,10 +6,12 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.common.collect.Lists;
+import com.simibubi.create.AllDataComponents;
 import com.simibubi.create.Create;
 import com.simibubi.create.content.logistics.BigItemStack;
 import com.simibubi.create.content.logistics.box.PackageItem;
 
+import com.simibubi.create.content.logistics.box.PackageItem.PackageOrderData;
 import com.simibubi.create.content.logistics.stockTicker.PackageOrder;
 import com.simibubi.create.content.logistics.stockTicker.PackageOrderCraftingContext;
 
@@ -17,8 +19,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.ItemStack;
 
-import net.minecraftforge.items.ItemHandlerHelper;
-import net.minecraftforge.items.ItemStackHandler;
+import net.neoforged.neoforge.items.ItemStackHandler;
 
 public class PackageRepackageHelper {
 
@@ -29,15 +30,12 @@ public class PackageRepackageHelper {
 	}
 
 	public boolean isFragmented(ItemStack box) {
-		if (!box.hasTag() || !box.getTag()
-			.contains("Fragment"))
+		if (!box.has(AllDataComponents.PACKAGE_ORDER_DATA))
 			return false;
 
-		CompoundTag fragTag = box.getTag()
-			.getCompound("Fragment");
+		PackageOrderData data = box.get(AllDataComponents.PACKAGE_ORDER_DATA);
 
-		return !(fragTag.getInt("LinkIndex") == 0 && fragTag.getBoolean("IsFinalLink") && fragTag.getInt("Index") == 0
-			&& fragTag.getBoolean("IsFinal"));
+		return !(data.linkIndex() == 0 && data.isFinalLink() && data.fragmentIndex() == 0 && data.isFinal());
 	}
 
 	public int addPackageFragment(ItemStack box) {
@@ -63,21 +61,21 @@ public class PackageRepackageHelper {
 
 		for (ItemStack box : collectedPackages.get(orderId)) {
 			address = PackageItem.getAddress(box);
-			if (box.hasTag()) {
-				CompoundTag tag = box.getTag().getCompound("Fragment");
-				if (tag.contains("OrderContext"))
-					orderContext = PackageItem.getOrderContext(box);
-				if (tag.contains("OrderCraftingContext"))
-					orderCraftingContext = PackageItem.getOrderCraftingContext(box);
+			if (box.has(AllDataComponents.PACKAGE_ORDER_DATA)) {
+				PackageOrder context = box.get(AllDataComponents.PACKAGE_ORDER_DATA).orderContext();
+				if (context != null && !context.isEmpty())
+					orderContext = context;
+				PackageOrderCraftingContext craftingContext = box.get(AllDataComponents.PACKAGE_ORDER_DATA).craftingContext();
+				if (craftingContext != null && !craftingContext.isEmpty())
+					orderCraftingContext = craftingContext;
 			}
 
 
 			ItemStackHandler contents = PackageItem.getContents(box);
-			Slots:
-			for (int slot = 0; slot < contents.getSlots(); slot++) {
+			Slots: for (int slot = 0; slot < contents.getSlots(); slot++) {
 				ItemStack stackInSlot = contents.getStackInSlot(slot);
 				for (BigItemStack existing : allItems) {
-					if (!ItemHandlerHelper.canItemStacksStack(stackInSlot, existing.stack))
+					if (!ItemStack.isSameItemSameComponents(stackInSlot, existing.stack))
 						continue;
 					existing.count += stackInSlot.getCount();
 					continue Slots;
@@ -112,7 +110,7 @@ public class PackageRepackageHelper {
 					continue;
 				if (targetedEntry != null) {
 					targetAmount = targetedEntry.count;
-					if (!ItemHandlerHelper.canItemStacksStack(entry.stack, targetedEntry.stack))
+					if (!ItemStack.isSameItemSameComponents(entry.stack, targetedEntry.stack))
 						continue;
 				}
 
@@ -121,7 +119,7 @@ public class PackageRepackageHelper {
 					if (removedAmount == 0)
 						continue ItemSearch;
 
-					ItemStack output = ItemHandlerHelper.copyStackWithSize(entry.stack, removedAmount);
+					ItemStack output = entry.stack.copyWithCount(removedAmount);
 					targetAmount -= removedAmount;
 					if (targetedEntry != null)
 						targetedEntry.count = targetAmount;
@@ -165,6 +163,7 @@ public class PackageRepackageHelper {
 		return exportingPackages;
 	}
 
+
 	private boolean isOrderComplete(int orderId) {
 		boolean finalLinkReached = false;
 		Links:
@@ -174,14 +173,13 @@ public class PackageRepackageHelper {
 			Packages:
 			for (int packageCounter = 0; packageCounter < 1000; packageCounter++) {
 				for (ItemStack box : collectedPackages.get(orderId)) {
-					CompoundTag tag = box.getOrCreateTag()
-						.getCompound("Fragment");
-					if (linkCounter != tag.getInt("LinkIndex"))
+					PackageOrderData data = box.get(AllDataComponents.PACKAGE_ORDER_DATA);
+					if (linkCounter != data.linkIndex())
 						continue;
-					if (packageCounter != tag.getInt("Index"))
+					if (packageCounter != data.fragmentIndex())
 						continue;
-					finalLinkReached = tag.getBoolean("IsFinalLink");
-					if (tag.getBoolean("IsFinal"))
+					finalLinkReached = data.isFinalLink();
+					if (data.isFinal())
 						continue Links;
 					continue Packages;
 				}
@@ -192,14 +190,7 @@ public class PackageRepackageHelper {
 	}
 
 	protected boolean shouldSplit(ItemStack box) {
-		if (!box.hasTag() || !box.getTag()
-			.contains("Fragment"))
-			return false;
-
-		CompoundTag fragTag = box.getTag()
-			.getCompound("Fragment");
-
-		if (!fragTag.contains("OrderCraftingContext"))
+		if (!box.has(AllDataComponents.PACKAGE_ORDER_DATA))
 			return false;
 
 		PackageOrderCraftingContext orderContext = PackageItem.getOrderCraftingContext(box);
@@ -222,7 +213,7 @@ public class PackageRepackageHelper {
 			if (stackInSlot.isEmpty())
 				continue;
 			for (BigItemStack existing : allItems) {
-				if (!ItemHandlerHelper.canItemStacksStack(stackInSlot, existing.stack))
+				if (!ItemStack.isSameItemSameComponents(stackInSlot, existing.stack))
 					continue;
 				existing.count += stackInSlot.getCount();
 				continue AllItems;
@@ -246,7 +237,7 @@ public class PackageRepackageHelper {
 					if (bis.stack.isEmpty())
 						continue;
 					for (BigItemStack existing : packRequestInstance) {
-						if (!ItemHandlerHelper.canItemStacksStack(bis.stack, existing.stack))
+						if (!ItemStack.isSameItemSameComponents(bis.stack, existing.stack))
 							continue;
 						existing.count += bis.count;
 						continue PackRequestFill;
@@ -258,14 +249,14 @@ public class PackageRepackageHelper {
 					int targetAmount = targetedEntry.count;
 					ItemSearch:
 					for (BigItemStack entry : allItems) {
-						if (!ItemHandlerHelper.canItemStacksStack(targetedEntry.stack, entry.stack))
+						if (!ItemStack.isSameItemSameComponents(targetedEntry.stack, entry.stack))
 							continue;
 						while (targetAmount > 0) {
 							int removedAmount = Math.min(Math.min(targetAmount, entry.stack.getMaxStackSize()), entry.count);
 							if (removedAmount == 0)
 								continue ItemSearch;
 
-							ItemStack output = ItemHandlerHelper.copyStackWithSize(entry.stack, removedAmount);
+							ItemStack output = entry.stack.copyWithCount(removedAmount);
 							targetAmount -= removedAmount;
 							entry.count -= removedAmount;
 							outputSlots.add(output);

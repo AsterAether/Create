@@ -4,14 +4,20 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.simibubi.create.content.logistics.BigItemStack;
 
+import net.createmod.catnip.codecs.stream.CatnipStreamCodecBuilders;
 import net.createmod.catnip.nbt.NBTHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.IntArrayTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
 
 /**
  * Package ordering context containing additional information of package orders.
@@ -21,16 +27,16 @@ import net.minecraft.network.FriendlyByteBuf;
  */
 public record PackageOrderCraftingContext(List<List<BigItemStack>> stacks, List<Integer> amounts) {
 
-    public CompoundTag write() {
-        CompoundTag tag = new CompoundTag();
-        ListTag outer = new ListTag();
-        for (List<BigItemStack> stack : stacks) {
-            outer.add(NBTHelper.writeCompoundList(stack, BigItemStack::write));
-        }
-        tag.put("Entries", outer);
-        tag.put("Amounts", new IntArrayTag(amounts));
-        return tag;
-    }
+	public static final Codec<PackageOrderCraftingContext> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+		Codec.list(BigItemStack.CODEC.listOf()).fieldOf("amounts").forGetter(PackageOrderCraftingContext::stacks),
+		Codec.list(Codec.INT).fieldOf("amounts").forGetter(PackageOrderCraftingContext::amounts)
+	).apply(instance, PackageOrderCraftingContext::new));
+
+	public static final StreamCodec<RegistryFriendlyByteBuf, PackageOrderCraftingContext> STREAM_CODEC = StreamCodec.composite(
+		CatnipStreamCodecBuilders.list(CatnipStreamCodecBuilders.list(BigItemStack.STREAM_CODEC)), PackageOrderCraftingContext::stacks,
+		CatnipStreamCodecBuilders.list(ByteBufCodecs.INT), PackageOrderCraftingContext::amounts,
+		PackageOrderCraftingContext::new
+	);
 
     public static boolean hasCraftingInformation(PackageOrderCraftingContext context) {
         if (context == null) {
@@ -47,48 +53,6 @@ public record PackageOrderCraftingContext(List<List<BigItemStack>> stacks, List<
 
     public boolean isEmpty() {
         return stacks.isEmpty();
-    }
-
-    public static PackageOrderCraftingContext read(CompoundTag tag) {
-        List<List<BigItemStack>> stacks = new ArrayList<>();
-        for (Tag t : tag.getList("Entries", Tag.TAG_LIST)) {
-            if (t instanceof ListTag list)
-                stacks.add(NBTHelper.readCompoundList(list, BigItemStack::read));
-        }
-        List<Integer> amounts = Arrays.stream(tag.getIntArray("Amounts")).boxed().toList();
-        return new PackageOrderCraftingContext(stacks, amounts);
-    }
-
-    public void write(FriendlyByteBuf buffer) {
-        buffer.writeVarInt(stacks.size());
-        for (List<BigItemStack> list : stacks) {
-            buffer.writeVarInt(list.size());
-            for (BigItemStack itemStack : list)
-                itemStack.send(buffer);
-        }
-        buffer.writeVarInt(amounts.size());
-        for (Integer amount : amounts) {
-            buffer.writeVarInt(amount);
-        }
-    }
-
-    public static PackageOrderCraftingContext read(FriendlyByteBuf buffer) {
-        int size = buffer.readVarInt();
-        List<List<BigItemStack>> stacks = new ArrayList<>();
-        for (int i = 0; i < size; i++) {
-            List<BigItemStack> list = new ArrayList<>();
-            int innerSize = buffer.readVarInt();
-            for (int j = 0; j < innerSize; j++) {
-                list.add(BigItemStack.receive(buffer));
-            }
-            stacks.add(list);
-        }
-        List<Integer> amounts = new ArrayList<>();
-        size = buffer.readVarInt();
-        for (int i = 0; i < size; i++) {
-            amounts.add(buffer.readVarInt());
-        }
-        return new PackageOrderCraftingContext(stacks, amounts);
     }
 
 }
