@@ -1,21 +1,20 @@
 package com.simibubi.create.content.logistics.redstoneRequester;
 
+import com.simibubi.create.AllPackets;
 import com.simibubi.create.AllSoundEvents;
 import com.simibubi.create.content.logistics.BigItemStack;
 import com.simibubi.create.content.logistics.packager.InventorySummary;
 import com.simibubi.create.content.logistics.packagerLink.LogisticallyLinkedBehaviour.RequestType;
 import com.simibubi.create.content.logistics.packagerLink.WiFiParticle;
 import com.simibubi.create.content.logistics.stockTicker.PackageOrder;
+import com.simibubi.create.content.logistics.stockTicker.PackageOrderCraftingContext;
 import com.simibubi.create.content.logistics.stockTicker.StockCheckingBlockEntity;
 
-import net.createmod.catnip.codecs.CatnipCodecUtils;
-import net.createmod.catnip.platform.CatnipServices;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
@@ -25,13 +24,14 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
-import net.neoforged.neoforge.common.util.FakePlayer;
+import net.minecraftforge.common.util.FakePlayer;
+import net.minecraftforge.network.NetworkHooks;
 
 public class RedstoneRequesterBlockEntity extends StockCheckingBlockEntity implements MenuProvider {
 
 	public boolean allowPartialRequests;
 	public PackageOrder encodedRequest = PackageOrder.empty();
-	public PackageOrder encodedRequestContext = PackageOrder.empty();
+	public PackageOrderCraftingContext encodedRequestContext = PackageOrderCraftingContext.empty();
 	public String encodedTargetAdress = "";
 
 	public boolean lastRequestSucceeded;
@@ -72,48 +72,47 @@ public class RedstoneRequesterBlockEntity extends StockCheckingBlockEntity imple
 				anySucceeded = true;
 				continue;
 			}
-			if (!allowPartialRequests && level instanceof ServerLevel serverLevel) {
-				CatnipServices.NETWORK.sendToClientsAround(serverLevel, worldPosition, 32,
+			if (!allowPartialRequests) {
+				AllPackets.sendToNear(level, worldPosition, 32,
 					new RedstoneRequesterEffectPacket(worldPosition, false));
 				return;
 			}
 		}
 
-		broadcastPackageRequest(RequestType.REDSTONE, encodedRequest, null, encodedTargetAdress, encodedRequestContext.isEmpty() ? null : encodedRequestContext);
-		if (level instanceof ServerLevel serverLevel)
-			CatnipServices.NETWORK.sendToClientsAround(serverLevel, worldPosition, 32, new RedstoneRequesterEffectPacket(worldPosition, anySucceeded));
+		broadcastPackageRequest(RequestType.REDSTONE, encodedRequest, null, encodedTargetAdress, null, encodedRequestContext.isEmpty() ? null : encodedRequestContext);
+		AllPackets.sendToNear(level, worldPosition, 32, new RedstoneRequesterEffectPacket(worldPosition, anySucceeded));
 		lastRequestSucceeded = true;
 	}
 
 	@Override
-	protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
-		super.read(tag, registries, clientPacket);
+	protected void read(CompoundTag tag, boolean clientPacket) {
+		super.read(tag, clientPacket);
 		redstonePowered = tag.getBoolean("Powered");
 		lastRequestSucceeded = tag.getBoolean("Success");
 		allowPartialRequests = tag.getBoolean("AllowPartial");
-		encodedRequest = CatnipCodecUtils.decode(PackageOrder.CODEC, tag.getCompound("EncodedRequest")).orElse(PackageOrder.empty());
-		encodedRequestContext = CatnipCodecUtils.decode(PackageOrder.CODEC, tag.getCompound("EncodedRequestContext")).orElse(PackageOrder.empty());
+		encodedRequest = PackageOrder.read(tag.getCompound("EncodedRequest"));
+		encodedRequestContext = PackageOrderCraftingContext.read(tag.getCompound("EncodedRequestContext"));
 		encodedTargetAdress = tag.getString("EncodedAddress");
 	}
 
 	@Override
-	public void writeSafe(CompoundTag tag, HolderLookup.Provider registries) {
-		super.writeSafe(tag, registries);
+	public void writeSafe(CompoundTag tag) {
+		super.writeSafe(tag);
 		tag.putBoolean("AllowPartial", allowPartialRequests);
 		tag.putString("EncodedAddress", encodedTargetAdress);
-		tag.put("EncodedRequest", CatnipCodecUtils.encode(PackageOrder.CODEC, encodedRequest).orElseThrow());
-		tag.put("EncodedRequestContext", CatnipCodecUtils.encode(PackageOrder.CODEC, encodedRequestContext).orElseThrow());
+		tag.put("EncodedRequest", encodedRequest.write());
+		tag.put("EncodedRequestContext", encodedRequestContext.write());
 	}
 
 	@Override
-	protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
-		super.write(tag, registries, clientPacket);
+	protected void write(CompoundTag tag, boolean clientPacket) {
+		super.write(tag, clientPacket);
 		tag.putBoolean("Powered", redstonePowered);
 		tag.putBoolean("Success", lastRequestSucceeded);
 		tag.putBoolean("AllowPartial", allowPartialRequests);
 		tag.putString("EncodedAddress", encodedTargetAdress);
-		tag.put("EncodedRequest", CatnipCodecUtils.encode(PackageOrder.CODEC, encodedRequest).orElseThrow());
-		tag.put("EncodedRequestContext", CatnipCodecUtils.encode(PackageOrder.CODEC, encodedRequestContext).orElseThrow());
+		tag.put("EncodedRequest", encodedRequest.write());
+		tag.put("EncodedRequestContext", encodedRequestContext.write());
 	}
 
 	public InteractionResult use(Player player) {
@@ -126,14 +125,14 @@ public class RedstoneRequesterBlockEntity extends StockCheckingBlockEntity imple
 		if (!behaviour.mayInteractMessage(player))
 			return InteractionResult.SUCCESS;
 
-		player.openMenu(this, worldPosition);
+		NetworkHooks.openScreen((ServerPlayer) player, this, worldPosition);
 		return InteractionResult.SUCCESS;
 	}
 
 	@Override
 	public Component getDisplayName() {
-        return Component.empty();
-    }
+		return Component.empty();
+	}
 
 	@Override
 	public AbstractContainerMenu createMenu(int pContainerId, Inventory pPlayerInventory, Player pPlayer) {

@@ -2,10 +2,8 @@ package com.simibubi.create.content.logistics.packager.repackager;
 
 import java.util.List;
 
-import com.simibubi.create.AllBlockEntityTypes;
 import com.simibubi.create.content.logistics.box.PackageItem;
 import com.simibubi.create.content.logistics.crate.BottomlessItemHandler;
-import com.simibubi.create.content.logistics.packager.PackageDefragmenter;
 import com.simibubi.create.content.logistics.packager.PackagerBlockEntity;
 import com.simibubi.create.content.logistics.packager.PackagerItemHandler;
 import com.simibubi.create.content.logistics.packager.PackagingRequest;
@@ -14,18 +12,16 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.capabilities.Capabilities;
-import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
-import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.items.ItemHandlerHelper;
+
+import net.minecraftforge.items.IItemHandler;
 
 public class RepackagerBlockEntity extends PackagerBlockEntity {
 
-	public PackageDefragmenter defragmenter;
+	public PackageRepackageHelper repackageHelper;
 
 	public RepackagerBlockEntity(BlockEntityType<?> typeIn, BlockPos pos, BlockState state) {
 		super(typeIn, pos, state);
-		defragmenter = new PackageDefragmenter();
+		repackageHelper = new PackageRepackageHelper();
 	}
 
 	public boolean unwrapBox(ItemStack box, boolean simulate) {
@@ -60,7 +56,8 @@ public class RepackagerBlockEntity extends PackagerBlockEntity {
 	}
 
 	@Override
-	public void recheckIfLinksPresent() {}
+	public void recheckIfLinksPresent() {
+	}
 
 	@Override
 	public boolean redstoneModeActive() {
@@ -68,14 +65,14 @@ public class RepackagerBlockEntity extends PackagerBlockEntity {
 	}
 
 	public void attemptToSend(List<PackagingRequest> queuedRequests) {
-		if (queuedRequests == null && (!heldBox.isEmpty() || animationTicks != 0))
+		if (queuedRequests == null && (!heldBox.isEmpty() || animationTicks != 0) && buttonCooldown > 0)
 			return;
 
 		IItemHandler targetInv = targetInventory.getInventory();
 		if (targetInv == null || targetInv instanceof PackagerItemHandler)
 			return;
 
-		attemptToDefrag(targetInv);
+		attemptToRepackage(targetInv);
 		if (heldBox.isEmpty())
 			return;
 
@@ -84,8 +81,8 @@ public class RepackagerBlockEntity extends PackagerBlockEntity {
 			PackageItem.addAddress(heldBox, signBasedAddress);
 	}
 
-	protected void attemptToDefrag(IItemHandler targetInv) {
-		defragmenter.clear();
+	protected void attemptToRepackage(IItemHandler targetInv) {
+		repackageHelper.clear();
 		int completedOrderId = -1;
 
 		for (int slot = 0; slot < targetInv.getSlots(); slot++) {
@@ -93,7 +90,16 @@ public class RepackagerBlockEntity extends PackagerBlockEntity {
 			if (extracted.isEmpty() || !PackageItem.isPackage(extracted))
 				continue;
 
-			if (!defragmenter.isFragmented(extracted)) {
+			if (!repackageHelper.isFragmented(extracted)) {
+				if (repackageHelper.shouldSplit(extracted)) {
+					List<ItemStack> boxesToExport = repackageHelper.split(extracted);
+					// If split fails, just treat package as normal package
+					if (boxesToExport != null) {
+						targetInv.extractItem(slot, 1, false);
+						pushPackages(boxesToExport);
+						return;
+					}
+				}
 				targetInv.extractItem(slot, 1, false);
 				heldBox = extracted.copy();
 				animationInward = false;
@@ -102,7 +108,7 @@ public class RepackagerBlockEntity extends PackagerBlockEntity {
 				return;
 			}
 
-			completedOrderId = defragmenter.addPackageFragment(extracted);
+			completedOrderId = repackageHelper.addPackageFragment(extracted);
 			if (completedOrderId != -1)
 				break;
 		}
@@ -110,7 +116,7 @@ public class RepackagerBlockEntity extends PackagerBlockEntity {
 		if (completedOrderId == -1)
 			return;
 
-		List<ItemStack> boxesToExport = defragmenter.repack(completedOrderId);
+		List<ItemStack> boxesToExport = repackageHelper.repack(completedOrderId);
 
 		for (int slot = 0; slot < targetInv.getSlots(); slot++) {
 			ItemStack extracted = targetInv.extractItem(slot, 1, true);
@@ -124,23 +130,25 @@ public class RepackagerBlockEntity extends PackagerBlockEntity {
 		if (boxesToExport.isEmpty())
 			return;
 
-		heldBox = boxesToExport.get(0)
+		ItemStack first = boxesToExport.get(0);
+		if (repackageHelper.shouldSplit(first)) {
+			List<ItemStack> splitToExport = repackageHelper.split(first);
+			// Same here, if split fails just output it normally
+			if (splitToExport != null) {
+				splitToExport.addAll(boxesToExport.subList(1, boxesToExport.size()));
+				boxesToExport = splitToExport;
+			}
+		}
+		pushPackages(boxesToExport);
+	}
+
+	protected void pushPackages(List<ItemStack> toPush) {
+		heldBox = toPush.get(0)
 			.copy();
 		animationInward = false;
 		animationTicks = CYCLE;
-
-		for (int i = 1; i < boxesToExport.size(); i++)
-			ItemHandlerHelper.insertItem(targetInv, boxesToExport.get(i), false);
-
+		queuedExitingPackages.addAll(toPush.subList(1, toPush.size()));
 		notifyUpdate();
-	}
-	
-	public static void registerCapabilities(RegisterCapabilitiesEvent event) {
-		event.registerBlockEntity(
-			Capabilities.ItemHandler.BLOCK,
-			AllBlockEntityTypes.REPACKAGER.get(),
-			(be, context) -> be.inventory
-		);
 	}
 
 }

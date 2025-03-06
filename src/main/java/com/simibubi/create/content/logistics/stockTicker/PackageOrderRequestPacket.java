@@ -1,6 +1,5 @@
 package com.simibubi.create.content.logistics.stockTicker;
 
-import com.simibubi.create.AllPackets;
 import com.simibubi.create.AllSoundEvents;
 import com.simibubi.create.content.logistics.packagerLink.LogisticallyLinkedBehaviour.RequestType;
 import com.simibubi.create.content.logistics.packagerLink.WiFiEffectPacket;
@@ -9,37 +8,50 @@ import com.simibubi.create.foundation.advancement.AllAdvancements;
 import com.simibubi.create.foundation.networking.BlockEntityConfigurationPacket;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 
 public class PackageOrderRequestPacket extends BlockEntityConfigurationPacket<StockTickerBlockEntity> {
-	public static final StreamCodec<RegistryFriendlyByteBuf, PackageOrderRequestPacket> STREAM_CODEC = StreamCodec.composite(
-	    BlockPos.STREAM_CODEC, packet -> packet.pos,
-		PackageOrder.STREAM_CODEC, packet -> packet.order,
-		ByteBufCodecs.STRING_UTF8, packet -> packet.address,
-		ByteBufCodecs.BOOL, packet -> packet.encodeRequester,
-		PackageOrder.STREAM_CODEC, packet -> packet.craftingRequest,
-	    PackageOrderRequestPacket::new
-	);
 
-	private final PackageOrder order;
-	private final String address;
-	private final boolean encodeRequester;
-	private final PackageOrder craftingRequest;
+	private PackageOrder order;
+	private String address;
+	private boolean encodeRequester;
+	private PackageOrder context;
+	private PackageOrderCraftingContext craftingRequest;
 
-	public PackageOrderRequestPacket(BlockPos pos, PackageOrder order, String address, boolean encodeRequester, PackageOrder craftingRequest) {
+	public PackageOrderRequestPacket(BlockPos pos, PackageOrder order, String address, boolean encodeRequester, PackageOrder context, PackageOrderCraftingContext craftingRequest) {
 		super(pos);
 		this.order = order;
 		this.address = address;
 		this.encodeRequester = encodeRequester;
+		this.context = context;
 		this.craftingRequest = craftingRequest;
 	}
 
+	public PackageOrderRequestPacket(FriendlyByteBuf buffer) {
+		super(buffer);
+	}
+
 	@Override
-	public PacketTypeProvider getTypeProvider() {
-		return AllPackets.LOGISTICS_PACKAGE_REQUEST;
+	protected void writeSettings(FriendlyByteBuf buffer) {
+		buffer.writeUtf(address);
+		order.write(buffer);
+		buffer.writeBoolean(encodeRequester);
+		context.write(buffer);
+		craftingRequest.write(buffer);
+	}
+
+	@Override
+	protected void readSettings(FriendlyByteBuf buffer) {
+		address = buffer.readUtf();
+		order = PackageOrder.read(buffer);
+		encodeRequester = buffer.readBoolean();
+		context = PackageOrder.read(buffer);
+		craftingRequest = PackageOrderCraftingContext.read(buffer);
+	}
+
+	@Override
+	protected void applySettings(StockTickerBlockEntity be) {
 	}
 
 	@Override
@@ -58,6 +70,8 @@ public class PackageOrderRequestPacket extends BlockEntityConfigurationPacket<St
 			WiFiEffectPacket.send(player.level(), pos);
 		}
 
-		be.broadcastPackageRequest(RequestType.PLAYER, order, null, address, craftingRequest.isEmpty() ? null : craftingRequest);
+		be.broadcastPackageRequest(RequestType.PLAYER, order, null, address, context.isEmpty() ? null : context, craftingRequest.isEmpty() ? null : craftingRequest);
+		return;
 	}
+
 }
