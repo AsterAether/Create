@@ -127,6 +127,11 @@ public class PackageItem extends Item {
 		}
 	}
 
+	@Nullable
+	/**
+	 * Ordered items and their amount in the original, combined request\n
+	 * (Present in all non-redstone packages)
+	 */
 	public static PackageOrder getOrderContext(ItemStack box) {
 		if (box.has(AllDataComponents.PACKAGE_ORDER_DATA)) {
 			PackageOrderData data = box.get(AllDataComponents.PACKAGE_ORDER_DATA);
@@ -138,6 +143,11 @@ public class PackageItem extends Item {
 		}
 	}
 
+	@Nullable
+	/**
+	 * Recipes and their count encoded in the original request\n
+	 * (Specific to crafting packages)
+	 */
 	public static PackageOrderCraftingContext getOrderCraftingContext(ItemStack box) {
 		if (box.has(AllDataComponents.PACKAGE_ORDER_DATA)) {
 			PackageOrderData data = box.get(AllDataComponents.PACKAGE_ORDER_DATA);

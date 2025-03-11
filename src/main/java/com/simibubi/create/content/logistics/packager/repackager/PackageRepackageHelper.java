@@ -10,13 +10,11 @@ import com.simibubi.create.AllDataComponents;
 import com.simibubi.create.Create;
 import com.simibubi.create.content.logistics.BigItemStack;
 import com.simibubi.create.content.logistics.box.PackageItem;
-
 import com.simibubi.create.content.logistics.box.PackageItem.PackageOrderData;
 import com.simibubi.create.content.logistics.stockTicker.PackageOrder;
 import com.simibubi.create.content.logistics.stockTicker.PackageOrderCraftingContext;
 
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.ItemStack;
 
 import net.neoforged.neoforge.items.ItemStackHandler;
@@ -156,8 +154,9 @@ public class PackageRepackageHelper {
 		for (int i = 0; i < exportingPackages.size(); i++) {
 			ItemStack box = exportingPackages.get(i);
 			boolean isfinal = i == exportingPackages.size() - 1;
-			PackageItem.setOrder(box, orderId, 0, true, 0,
-				true, isfinal ? new PackageOrder(orderContext.stacks()) : null, isfinal ? new PackageOrderCraftingContext(orderCraftingContext.stacks(), orderCraftingContext.amounts()) : null);
+			PackageOrder outboundOrderContext = isfinal && orderContext != null ? new PackageOrder(orderContext.stacks()) : null;
+			PackageOrderCraftingContext outboundCraftingContext = isfinal && orderCraftingContext != null ? new PackageOrderCraftingContext(orderCraftingContext.stacks(), orderCraftingContext.amounts()) : null;
+			PackageItem.setOrder(box, orderId, 0, true, 0, true, outboundOrderContext, outboundCraftingContext);
 		}
 
 		return exportingPackages;
